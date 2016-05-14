@@ -132,43 +132,47 @@ class Memory(object):
 
 class RewardCenter(object):
 
+    # TODO Remove furthestStep
     furthestStep = 1
     BINCNT = 20
     bins = np.linspace(0, furthestStep, BINCNT)
     REWARD_BASE = 1
     timestep_history = []
 
+    # TODO Remove check_bins()
     @staticmethod
     def check_bins(t):
         if t > RewardCenter.furthestStep:
             RewardCenter.furthestStep = t
-            RewardCenter.bins = RewardCenter._update_bins()
+            RewardCenter.bins = RewardCenter.update_bins()
             return 1
         else:
             return 0
 
     @staticmethod
-    def _update_bins():
-        # TODO Handle cases where timestep_history is less than BINCNT
+    def update_bins(min_steps):
         ts_hist = RewardCenter.timestep_history
         bin_cnt = RewardCenter.BINCNT
 
-        bin_size = float(len(ts_hist)) / bin_cnt
+        if len(ts_hist) < min_steps:
+            furthest_step = max(ts_hist)
+            shortest_step = min(ts_hist) if min(ts_hist) != max(ts_hist) else 0
+            bins = np.linspace(shortest_step, furthest_step, bin_cnt)
+            return bins
 
-        ts_hist_sorted = sorted(ts_hist)
-
-        bin_indexes = [(i+1) * bin_size for i in xrange(bin_cnt)]
-
-        bins = [ts_hist_sorted[int(i)] for i in bin_indexes]
-
-        return bins
+        else:
+            bin_size = float(len(ts_hist)) / bin_cnt
+            ts_hist_sorted = sorted(ts_hist)
+            bin_indexes = [(i+1) * bin_size for i in xrange(bin_cnt)]
+            bins = [ts_hist_sorted[int(i)-1] for i in bin_indexes]
+            return bins
 
         # RewardCenter.bins = np.linspace(0, RewardCenter.furthestStep, bin_cnt)
 
     @staticmethod
     def update_rewards(memories, step):
         # Subtracts BINCNT so that half are negative, creating a negative rewards for lower bins
-        reward = (RewardCenter._digitize_it(step) - 0.6 * RewardCenter.BINCNT) * RewardCenter.REWARD_BASE
+        reward = (RewardCenter._digitize_it(step) - 0.5 * RewardCenter.BINCNT) * RewardCenter.REWARD_BASE
         reward = reward
         for mem in memories:
             mem.reward += reward
@@ -183,14 +187,16 @@ class RewardCenter(object):
         pickle.dump((RewardCenter.furthestStep,
                      RewardCenter.BINCNT,
                      RewardCenter.bins,
-                     RewardCenter.REWARD_BASE), open(filename, "wb"))
+                     RewardCenter.REWARD_BASE,
+                     RewardCenter.timestep_history), open(filename, "wb"))
 
     @staticmethod
     def loadFromFile(filename):
         RewardCenter.furthestStep, \
         RewardCenter.BINCNT,       \
         RewardCenter.bins,         \
-        RewardCenter.REWARD_BASE = pickle.load(open(filename, "rb"))
+        RewardCenter.REWARD_BASE,  \
+        RewardCenter.timestep_history = pickle.load(open(filename, "rb"))
 
 
 def run(episode_cnt=100, max_timestep=200):
@@ -230,15 +236,14 @@ def run(episode_cnt=100, max_timestep=200):
                 episode_memories.append(match)
                 # print("Memory Action %s: %s" % (t, act))
 
-
-            if done:
+            if done or t >= max_timestep - 1:
                 # After failing, update reward system
 
                 # Add the current timestep history
-                RewardCenter.timestep_history += tstep_results
+                RewardCenter.timestep_history += [t]
 
-                # First check bins to see if they need updating
-                RewardCenter.check_bins(t)
+                # Update bins
+                RewardCenter.bins = RewardCenter.update_bins(episode_cnt)
 
                 # Update rewards based on how many steps were performed
                 RewardCenter.update_rewards(episode_memories, t)
@@ -255,8 +260,8 @@ def run(episode_cnt=100, max_timestep=200):
 monitorIt = False
 monitorName = '/tmp/cartpole-experiment-3'
 memory_path = 'ancestral_memory'
-runs = 100
-episodes_per_run = 20
+runs = 10
+episodes_per_run = 50
 
 # Keep track of time steps taken
 all_results = []
@@ -269,13 +274,13 @@ if monitorIt:
 if path.exists(memory_path + ".pkl"):
     Memory.loadFromFile(memory_path + ".pkl")
     RewardCenter.loadFromFile(memory_path + "_rewards.pkl")
-    # Memory.BINCNT = 12
+    # Memory.BINCNT = 4
     # Memory.reDigitizeAll()
 
 for r in range(1, runs + 1):
 
-    timestep_results = run(episodes_per_run)
-    all_results += timestep_results
+    timestep_results = run(episodes_per_run, 300)
+    all_results = RewardCenter.timestep_history
     mean = int(np.mean(timestep_results))
 
     print("Run {} finished with a mean of {}".format(r, mean))
