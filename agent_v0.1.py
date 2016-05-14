@@ -19,7 +19,7 @@ class Memory(object):
     memories = {}
     memCnt = 0
     rewardBar = 0
-    BINCNT = 12
+    BINCNT = 20
     obvMax = [.0001, .0001, .0001, .0001]
     obvMin = [-0.0001, -0.0001, -0.0001, -0.0001]
     OBVCNT = len(env.observation_space.high)
@@ -138,6 +138,7 @@ class RewardCenter(object):
     bins = np.linspace(0, furthestStep, BINCNT)
     REWARD_BASE = 1
     timestep_history = []
+    MAX_STEP_HISTORY = 200
 
     # TODO Remove check_bins()
     @staticmethod
@@ -168,12 +169,15 @@ class RewardCenter(object):
             return bins
 
         # RewardCenter.bins = np.linspace(0, RewardCenter.furthestStep, bin_cnt)
-
+    tempVal = 0
     @staticmethod
     def update_rewards(memories, step):
         # Subtracts BINCNT so that half are negative, creating a negative rewards for lower bins
-        reward = (RewardCenter._digitize_it(step) - 0.5 * RewardCenter.BINCNT) * RewardCenter.REWARD_BASE
+        reward = (RewardCenter._digitize_it(step) - 0.5 * RewardCenter.BINCNT - 1) * RewardCenter.REWARD_BASE
         reward = reward
+        # print("Reward Changed by {}".format(reward))
+        RewardCenter.tempVal += reward
+        print("Reward Cumulative Value: {}".format(RewardCenter.tempVal))
         for mem in memories:
             mem.reward += reward
 
@@ -183,20 +187,29 @@ class RewardCenter(object):
         return dstep
 
     @staticmethod
+    def add_timestep(step):
+        RewardCenter.timestep_history += [step]
+        if len(RewardCenter.timestep_history) > RewardCenter.MAX_STEP_HISTORY:
+            diff = len(RewardCenter.timestep_history) - RewardCenter.MAX_STEP_HISTORY
+            RewardCenter.timestep_history = RewardCenter.timestep_history[diff:]
+
+    @staticmethod
     def saveToFile(filename):
         pickle.dump((RewardCenter.furthestStep,
                      RewardCenter.BINCNT,
                      RewardCenter.bins,
                      RewardCenter.REWARD_BASE,
-                     RewardCenter.timestep_history), open(filename, "wb"))
+                     RewardCenter.timestep_history,
+                     RewardCenter.MAX_STEP_HISTORY), open(filename, "wb"))
 
     @staticmethod
     def loadFromFile(filename):
-        RewardCenter.furthestStep, \
-        RewardCenter.BINCNT,       \
-        RewardCenter.bins,         \
-        RewardCenter.REWARD_BASE,  \
-        RewardCenter.timestep_history = pickle.load(open(filename, "rb"))
+        RewardCenter.furthestStep,     \
+        RewardCenter.BINCNT,           \
+        RewardCenter.bins,             \
+        RewardCenter.REWARD_BASE,      \
+        RewardCenter.timestep_history, \
+        RewardCenter.MAX_STEP_HISTORY = pickle.load(open(filename, "rb"))
 
 
 def run(episode_cnt=100, max_timestep=200):
@@ -240,7 +253,7 @@ def run(episode_cnt=100, max_timestep=200):
                 # After failing, update reward system
 
                 # Add the current timestep history
-                RewardCenter.timestep_history += [t]
+                RewardCenter.add_timestep(t)
 
                 # Update bins
                 RewardCenter.bins = RewardCenter.update_bins(episode_cnt)
