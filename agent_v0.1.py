@@ -50,32 +50,38 @@ class Memory(object):
     @staticmethod
     def searchObservations(observation):
         best = []
-        if len(Memory.memories) < 1: return -1
+        if len(Memory.memories) > 0:
 
-        Memory.updateMaxMinBins(observation)
-        obs = Memory.digitizeIt(observation)
+            Memory.updateMaxMinBins(observation)
+            obs = Memory.digitizeIt(observation)
 
-        for k, mem in Memory.memories.iteritems():
+            for k, mem in Memory.memories.iteritems():
 
-            if mem.observation == obs:
-                if list(observation) != list(mem.observation_bak):
-                    if mem.reward > Memory.rewardBar:
+                if mem.observation == obs:
+                    if list(observation) != list(mem.observation_bak):
+                        # TODO: Try removing this positive reward value check
+                        # if mem.reward > Memory.rewardBar:
                         best.append(mem)
 
-        if len(best) > 0:
-            best = sorted(best, key=lambda x: x.reward, reverse=True)
-            winner = best[0]
+            if len(best) > 0:
+                # TODO: Change best to matches
+                best = sorted(best, key=lambda x: x.reward, reverse=True)
+                # winner = best[0]
 
-            # Trim rest from memory as they are unneeded
-            if len(best) > 1:
-                trash = best[1:]
-                for bag in trash:
-                    del Memory.memories[bag.id]
+                # TODO: Remove this code when sure it is not needed
+                # # Trim rest from memory as they are unneeded
+                # if len(best) > 1:
+                #     trash = best[1:]
+                #     for bag in trash:
+                #         del Memory.memories[bag.id]
 
-            # Return the match
-            return winner
-        else:
-            return -1
+                # Return the match
+                # return winner
+            #     return best
+            # else:
+            #     return -1
+
+        return best
 
     @staticmethod
     def saveToFile(filename):
@@ -139,16 +145,6 @@ class RewardCenter(object):
     REWARD_BASE = 1
     timestep_history = []
     MAX_STEP_HISTORY = 200
-
-    # TODO Remove check_bins()
-    @staticmethod
-    def check_bins(t):
-        if t > RewardCenter.furthestStep:
-            RewardCenter.furthestStep = t
-            RewardCenter.bins = RewardCenter.update_bins()
-            return 1
-        else:
-            return 0
 
     @staticmethod
     def update_bins(min_steps):
@@ -225,29 +221,73 @@ def run(episode_cnt=100, max_timestep=200):
 
         # The steps
         for t in xrange(max_timestep):
+            act = None
+            is_new_memory = False
             env.render()
 
-            # act = env.action_space.sample()
+            # Look for similar observations in memory
+            matches = Memory.searchObservations(obs)
+            if not len(matches) <= env.action_space.n:
+                tmp = 1
+                # print "stop here"
+            # assert len(matches) <= env.action_space.n
+            # TODO: Add code to ensure duplicate memories are not created
+            # TODO: Should be able to use bad actions from memory, but when?
 
-            match = Memory.searchObservations(obs)
-
-            if match != -1:
-                act = match.action
-            else:
+            # If no matches are found, generate a random action
+            if matches == []:
                 act = env.action_space.sample()
+                is_new_memory = True
 
-            # act = 1 if act == 0 else 0
+            # If the top match has a positive reward, use its action
+            elif matches[0].reward > 0:
+                act = matches[0].action
 
+            # If the action space is covered, still use the best match action
+            elif len(matches) >= env.action_space.n:
+                act = matches[0].action
+
+            # Otherwise, generate a new action never used with this observation
+            else:
+                # Generate possible actions
+                assert type(env.action_space) == type(gym.spaces.Discrete(2))
+                poss_actions = xrange(env.action_space.n)
+
+                # Verify if the actions exist in matches
+                for p in poss_actions:
+                    found = False
+                    for m in matches:
+                        if m.action == p:
+                            found = True
+                            break
+
+                    # If the action is not found, break and use it
+                    if not found:
+                        act = p
+                        is_new_memory = True
+                        break
+
+            if is_new_memory:
+                if len(matches) > 2:
+                    print "stop here"
+                memory1 = Memory(obs, 1, act)
+            else:
+                memory1 = matches[0]
+
+            episode_memories.append(memory1)
+
+            assert act != None
             obs, rwd, done, info = env.step(act)
 
             #print("Reward %s: %s" % (t, rwd))
-
-            if match == -1 and not Memory.exists(obs, act):
-                # print("Random Action %s: %s" % (t, act))
-                episode_memories.append(Memory(obs, 1, act))
-            elif match != -1:
-                episode_memories.append(match)
-                # print("Memory Action %s: %s" % (t, act))
+            # TODO Does it matter that I'm storing the post observation?
+            # TODO Remove this code when sure it is not needed
+            # if matches == [] and not Memory.exists(obs, act):
+            #     print("Random Action %s: %s" % (t, act))
+            #     episode_memories.append(Memory(obs, 1, act))
+            # elif match != -1:
+            #     episode_memories.append(match)
+            #     # print("Memory Action %s: %s" % (t, act))
 
             if done or t >= max_timestep - 1:
                 # After failing, update reward system
@@ -305,12 +345,16 @@ for r in range(1, runs + 1):
     plt.xlabel('Episode')
     plt.axis([0, len(all_results), 0, max(all_results)])
 
+    #Clean memory of redundant entries
+    # TODO clean memory of redundant entries
+
     # Save memory to ancestral file
     Memory.saveToFile(memory_path + ".pkl")
     RewardCenter.saveToFile(memory_path + "_rewards.pkl")
 
     if r < runs:
-        plt.show(block=False)
+        pass
+        # plt.show(block=False)
     else:
         plt.show(block=True)
 
