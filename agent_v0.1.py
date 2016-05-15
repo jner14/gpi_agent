@@ -49,7 +49,7 @@ class Memory(object):
 
     @staticmethod
     def searchObservations(observation):
-        best = []
+        match_list = []
         if len(Memory.memories) > 0:
 
             Memory.updateMaxMinBins(observation)
@@ -59,29 +59,16 @@ class Memory(object):
 
                 if mem.observation == obs:
                     if list(observation) != list(mem.observation_bak):
-                        # TODO: Try removing this positive reward value check
-                        # if mem.reward > Memory.rewardBar:
-                        best.append(mem)
+                        match_list.append(mem)
 
-            if len(best) > 0:
-                # TODO: Change best to matches
-                best = sorted(best, key=lambda x: x.reward, reverse=True)
-                # winner = best[0]
+            if len(match_list) > 0:
+                match_list = sorted(match_list, key=lambda x: x.reward, reverse=True)
 
-                # TODO: Remove this code when sure it is not needed
-                # # Trim rest from memory as they are unneeded
-                # if len(best) > 1:
-                #     trash = best[1:]
-                #     for bag in trash:
-                #         del Memory.memories[bag.id]
+        return match_list
 
-                # Return the match
-                # return winner
-            #     return best
-            # else:
-            #     return -1
+    @staticmethod
+    def clean_house():
 
-        return best
 
     @staticmethod
     def saveToFile(filename):
@@ -138,10 +125,8 @@ class Memory(object):
 
 class RewardCenter(object):
 
-    # TODO Remove furthestStep
-    furthestStep = 1
     BINCNT = 20
-    bins = np.linspace(0, furthestStep, BINCNT)
+    bins = np.linspace(0, 1, BINCNT)
     REWARD_BASE = 1
     timestep_history = []
     MAX_STEP_HISTORY = 200
@@ -161,10 +146,9 @@ class RewardCenter(object):
             bin_size = float(len(ts_hist)) / bin_cnt
             ts_hist_sorted = sorted(ts_hist)
             bin_indexes = [(i+1) * bin_size for i in xrange(bin_cnt)]
-            bins = [ts_hist_sorted[int(i)-1] for i in bin_indexes]
+            bins = [ts_hist_sorted[int(i)-1 if int(i)-1 >=0 else 0] for i in bin_indexes]
             return bins
 
-        # RewardCenter.bins = np.linspace(0, RewardCenter.furthestStep, bin_cnt)
     tempVal = 0
     @staticmethod
     def update_rewards(memories, step):
@@ -172,8 +156,8 @@ class RewardCenter(object):
         reward = (RewardCenter._digitize_it(step) - 0.5 * RewardCenter.BINCNT - 1) * RewardCenter.REWARD_BASE
         reward = reward
         # print("Reward Changed by {}".format(reward))
-        RewardCenter.tempVal += reward
-        print("Reward Cumulative Value: {}".format(RewardCenter.tempVal))
+        # RewardCenter.tempVal += reward
+        # print("Reward Cumulative Value: {}".format(RewardCenter.tempVal))
         for mem in memories:
             mem.reward += reward
 
@@ -191,8 +175,7 @@ class RewardCenter(object):
 
     @staticmethod
     def saveToFile(filename):
-        pickle.dump((RewardCenter.furthestStep,
-                     RewardCenter.BINCNT,
+        pickle.dump((RewardCenter.BINCNT,
                      RewardCenter.bins,
                      RewardCenter.REWARD_BASE,
                      RewardCenter.timestep_history,
@@ -200,7 +183,6 @@ class RewardCenter(object):
 
     @staticmethod
     def loadFromFile(filename):
-        RewardCenter.furthestStep,     \
         RewardCenter.BINCNT,           \
         RewardCenter.bins,             \
         RewardCenter.REWARD_BASE,      \
@@ -229,10 +211,8 @@ def run(episode_cnt=100, max_timestep=200):
             matches = Memory.searchObservations(obs)
             if not len(matches) <= env.action_space.n:
                 tmp = 1
-                # print "stop here"
+            # TODO Use assert to check for too many matches
             # assert len(matches) <= env.action_space.n
-            # TODO: Add code to ensure duplicate memories are not created
-            # TODO: Should be able to use bad actions from memory, but when?
 
             # If no matches are found, generate a random action
             if matches == []:
@@ -269,7 +249,7 @@ def run(episode_cnt=100, max_timestep=200):
 
             if is_new_memory:
                 if len(matches) > 2:
-                    print "stop here"
+                    tempvar = 1
                 memory1 = Memory(obs, 1, act)
             else:
                 memory1 = matches[0]
@@ -278,16 +258,6 @@ def run(episode_cnt=100, max_timestep=200):
 
             assert act != None
             obs, rwd, done, info = env.step(act)
-
-            #print("Reward %s: %s" % (t, rwd))
-            # TODO Does it matter that I'm storing the post observation?
-            # TODO Remove this code when sure it is not needed
-            # if matches == [] and not Memory.exists(obs, act):
-            #     print("Random Action %s: %s" % (t, act))
-            #     episode_memories.append(Memory(obs, 1, act))
-            # elif match != -1:
-            #     episode_memories.append(match)
-            #     # print("Memory Action %s: %s" % (t, act))
 
             if done or t >= max_timestep - 1:
                 # After failing, update reward system
@@ -309,12 +279,13 @@ def run(episode_cnt=100, max_timestep=200):
     return tstep_results
 # END RUN() FUNCTION
 
-
+# TODO Add stop learning variable
 monitorIt = False
-monitorName = '/tmp/cartpole-experiment-3'
+monitorName = '/tmp/cartpole-experiment-5'
 memory_path = 'ancestral_memory'
-runs = 10
-episodes_per_run = 50
+runs = 1
+episodes_per_run = 100
+max_timesteps = 300
 
 # Keep track of time steps taken
 all_results = []
@@ -332,7 +303,7 @@ if path.exists(memory_path + ".pkl"):
 
 for r in range(1, runs + 1):
 
-    timestep_results = run(episodes_per_run, 300)
+    timestep_results = run(episodes_per_run, max_timesteps)
     all_results = RewardCenter.timestep_history
     mean = int(np.mean(timestep_results))
 
@@ -347,6 +318,7 @@ for r in range(1, runs + 1):
 
     #Clean memory of redundant entries
     # TODO clean memory of redundant entries
+    Memory.clean_house()
 
     # Save memory to ancestral file
     Memory.saveToFile(memory_path + ".pkl")
@@ -354,6 +326,7 @@ for r in range(1, runs + 1):
 
     if r < runs:
         pass
+        plt.show(block=True)
         # plt.show(block=False)
     else:
         plt.show(block=True)
